@@ -1,0 +1,358 @@
+---
+title: "6 - RNA Analysis - Enrichment"
+author: "David Alberto García Estrada"
+date: '`r Sys.Date()`'
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Enrichment
+
+## GO Terms
+
+The terms for enrichment are obtained from the [JGI Trichoderma atroviride](https://mycocosm.jgi.doe.gov/Triat2/Triat2.home.html) page.
+
+```{r}
+# Import the updated GO term table into the new genome
+# The table containing the GO terms is read.
+ID_GO <- readMappings(paste0(OutpathGO,"Trichoderma.atroviride.GO.txt"),
+                      sep="\t", IDsep = ";")
+terminos <- c("BP", "CC", "MF")
+for (t in terminos){
+  # t <- "BP"
+  # term list
+  # Compiles the list of GO terms such that each list is a character vector
+  # containing all the identifiers of the genes that map to their respective term
+  list <- annFUN.gene2GO(whichOnto = t, feasibleGenes = NULL, gene2GO = ID_GO)
+  TermGo <- data.frame()
+  for (i in names(list)){ # # In the variable "i" is stored the term GO
+    y <- list[[i]] # We obtain the genes that give with that GO term
+    ln <- length(list[[i]]) # The number of genes that match that GO term
+    x <- data.frame(GO=rep(i,ln),y) # The table is stored in X and has the following structure
+    # GOi term | Gene A
+    # GOi term | Gen B
+    # Term GOi | Gen C
+    TermGo <- rbind(TermGo,x) # Join the tables in TermGo with the previous x
+  }
+  # Builds a map with GO terms (orders the genes with their respective GO term).
+  tGo <- buildGOmap(TermGo)
+  # Store a vector with GO terms
+  Term <- tGo$GO
+  # We add to the GO term its DESCRIPTIVE term
+  addterm <- go2term(Term)
+  # Change the title of the columns
+  colnames(addterm) <- c("GO", "Term")
+  # We join the table tGo with addterm by the common feature which is "GO".
+  # It looks like this: GO | Gene | Term
+  Gomap <- left_join(tGo, addterm, by = "GO") 
+  assign(paste("GOGeneTerm_", t, sep = ""), Gomap)
+  # We keep all the rows with the GO and Gene columns.
+  term2gene <- Gomap[,c("GO", "Gene")]
+  assign(paste("GOGene_", t, sep = ""), term2gene)
+  # We keep all the rows with the GO and Term columns.
+  term2name <- Gomap[,c("GO", "Term")]
+  assign(paste("GOName_", t, sep = ""), term2name)
+}
+```
+
+# Extraction of the GO terms for Closters
+
+We create the folders where the data and graphs will be stored
+
+```{r}
+DirEnrichClos <- paste0(DirEnrich, "Closters/")
+dir.create(DirEnrichClos, showWarnings = FALSE)
+
+DirEnrichBP <- paste0(DirEnrichClos, "BP/")
+dir.create(DirEnrichBP, showWarnings = FALSE)
+PlotBP <- paste0(DirEnrichBP, "Plots/")
+dir.create(PlotBP, showWarnings = FALSE)
+
+DirEnrichCC <- paste0(DirEnrichClos, "CC/")
+dir.create(DirEnrichCC, showWarnings = FALSE)
+PlotCC <- paste0(DirEnrichCC, "Plots/")
+dir.create(PlotCC, showWarnings = FALSE)
+
+DirEnrichMF <- paste0(DirEnrichClos, "MF/")
+dir.create(DirEnrichMF, showWarnings = FALSE)
+PlotMF <- paste0(DirEnrichMF, "Plots/")
+dir.create(PlotMF, showWarnings = FALSE)
+```
+
+```{r}
+# Lists for the for loop
+list_enrchK_BP <- list()
+list_enrchK_CC <- list()
+list_enrchK_MF <- list()
+
+# NOTE: ClustFile was created in "Transcriptomic analysis - part 5".
+# ClustFile was generated from data of FDR 0.05 and log2FC greater than 1
+for (i in names(ClustFile)){
+  tryCatch({
+  # i <- "Closter 1"
+  # I remove all the spaces that the vector i may have and store it in that variable
+  names_file <- sub(" ","",i)
+  # We put the data from the list in the vector data.dge
+  data.dge <- ClustFile[[i]]
+  dge_id <- rownames(data.dge)
+  # Enrichment
+  dge.erch_BP <- enricher(dge_id, TERM2GENE = GOGene_BP, TERM2NAME = GOName_BP, 
+                          pAdjustMethod = "none", pvalueCutoff = 0.01, 
+                          qvalueCutoff = 1, minGSSize = 1)
+  dge.erch_CC <- enricher(dge_id, TERM2GENE = GOGene_CC, TERM2NAME = GOName_CC, 
+                          pAdjustMethod = "none", pvalueCutoff = 0.01,
+                          qvalueCutoff = 1, minGSSize = 1)
+  dge.erch_MF <- enricher(dge_id, TERM2GENE = GOGene_MF, TERM2NAME = GOName_MF, 
+                          pAdjustMethod = "none", pvalueCutoff = 0.01, 
+                          qvalueCutoff = 1, minGSSize = 1)
+  # We store in a list
+  list_enrchK_BP[[names_file]] <- dge.erch_BP
+  list_enrchK_CC[[names_file]] <- dge.erch_CC
+  list_enrchK_MF[[names_file]] <- dge.erch_MF
+  # Save tables
+  write.table(dge.erch_BP, file = paste0(DirEnrichBP, "BP-Enrichement-", names_file, ".txt"), 
+              row.names = TRUE, col.names = NA, quote = FALSE, sep = "\t")
+  write.table(dge.erch_CC, file = paste0(DirEnrichCC, "CC-Enrichement-", names_file, ".txt"), 
+              row.names = TRUE, col.names = NA, quote = FALSE, sep = "\t")
+  write.table(dge.erch_MF, file = paste0(DirEnrichMF, "MF-Enrichement-", names_file, ".txt"), 
+              row.names = TRUE, col.names = NA, quote = FALSE, sep = "\t")
+  }, error=function(e){cat("ERROR :",conditionMessage(e),"\n")}) 
+}
+
+# Graph
+for (i in  names(ClustFile)){
+  # i <- "Closter 1"
+  tryCatch({
+    i <- sub(" ","", i)
+    # Biological Process
+    BP <- dotplot(list_enrchK_BP[[i]], showCategory = 10, 
+            color = "pvalue", title = paste0("Enrichment Biological Process in ", i), font.size=10)
+    svg(paste0(PlotBP, "DotplotBP_", i, ".svg"), width = 10, height = 10)
+    plot(BP)
+    dev.off()
+    # Component Cellular
+    CC <- dotplot(list_enrchK_CC[[i]], showCategory = 10, 
+            color = "pvalue", title = paste0("Enrichment Component Celullar in ", i), font.size=10)
+    svg(paste0(PlotCC, "DotplotCC_", i, ".svg"), width = 10, height = 10)
+    plot(CC)
+    dev.off()
+    # Molecular Function
+    MF <- dotplot(list_enrchK_MF[[i]], showCategory = 10, 
+            color = "pvalue", title = paste0("Enrichment Molecular Function in ", i), font.size=10)
+    svg(paste0(PlotMF, "DotplotMF_", i, ".svg"), width = 10, height = 10)
+    plot(MF)
+    dev.off()
+  }, error=function(e){cat("ERROR :",conditionMessage(e), "\n")}) 
+}
+```
+
+## Specific closter
+
+```{r}
+# Closter 3 (up), 1 y 7 (down)
+dotplot(list_enrchK_BP[["Closter3"]], showCategory = 10, color = "pvalue", 
+        title = "Enrichment Biological Process in Closter 3", font.size=10)
+
+dotplot(list_enrchK_BP[["Closter1"]], showCategory = 10, color = "pvalue", 
+        title = "Enrichment Biological Process in Closter 9", font.size=10)
+
+dotplot(list_enrchK_BP[["Closter7"]], showCategory = 10, color = "pvalue", 
+        title = "Enrichment Biological Process in Closter 7", font.size=10)
+
+C3.1.7 <- list(Closter3 = list_enrchK_BP[["Closter3"]],
+               Closter1 = list_enrchK_BP[["Closter1"]],
+               Closter7 = list_enrchK_BP[["Closter7"]])
+dp <- dotplot(merge_result(C3.1.7), showCategory = 10, color = "pvalue", 
+        title = "Enrichment Biological Process in Closter 3, 1 & 7", font.size=10)
+svg(paste0(PlotBP, "DotplotBP_3-1-7.svg"), width = 10, height = 10)
+plot(dp)
+dev.off()
+```
+
+
+# Extraction of the GO terms for Contrast
+
+We create the folders where the data and graphs will be stored
+
+```{r}
+DirGO <- paste0(DirEnrich, "Crontast/")
+dir.create(DirGO, showWarnings = FALSE)
+```
+
+18 contrasts
+
+```{r}
+UpDown <- c("up.", "down.", "")
+condicion
+contrastes <- contrasts[-c(1,4)]
+for (h  in condicion){
+  # h <- "FDR_0.05"
+  DirGOFDR <- paste0(DirGO, h,"/")
+  dir.create(DirGOFDR, showWarnings = FALSE)
+  for (i in contrastes){
+    # i <- "IPT7vsWT7"
+    DirGOCont <- paste0(DirGOFDR, i, "/")
+    dir.create(DirGOCont, showWarnings = FALSE)
+    table_enrchk <- data.frame()
+    for (GO in c("BP", "CC", "MF")){
+      tryCatch({
+      # GO <- "BP"
+      list_enrchK <- list()
+      for (j in UpDown){
+        # j <- "up."
+        tryCatch({
+          # Directory GO
+          DirTerGO <- paste0(DirGOCont, GO, "/")
+          dir.create(DirTerGO, showWarnings = FALSE)
+          # Directory GO - Termino
+          DirTerGOTer <- paste0(DirTerGO, "Termino/")
+          dir.create(DirTerGOTer, showWarnings = FALSE)
+          # Directory GO - ID
+          DirTerGOID <- paste0(DirTerGO, "ID/")
+          dir.create(DirTerGOID, showWarnings = FALSE)
+          # Directory GO - Plot
+          DirTerGOPlot <- paste0(DirTerGO, "Plot/")
+          dir.create(DirTerGOPlot, showWarnings = FALSE)
+          # Read files
+          grupo <- read.table(file = paste0(outpath, h, "/Tablas/", j, "DEG-", i, "_" , h, ".txt"),
+                              header = T, row.names = 1, sep = "\t", comment.char="")
+          genes <- rownames(grupo)
+          ####
+          genelist <- factor(as.integer(geneNames %in% genes))
+          names(genelist) <- geneNames
+          # GO it can be "BP" biological process, "MF" molecular function, "CC" cellular component.
+          GOdata <- new("topGOdata", ontology = GO, allGenes = genelist,
+                        annot = annFUN.gene2GO, gene2GO = ID_GO)
+          resulFis <- runTest(GOdata, algorithm = "classic", statistic = "fisher")
+          allRes <- GenTable(GOdata, classic = resulFis, orderBy = "weight",
+                             ranksOf = "classic", topNodes = 20)
+          # This function displays the number of the most significant nodes (rectangles) in the area.
+          showSigOfNodes(GOdata, score(resulFis), firstSigNodes = 10, useInfo = "all")
+          # This function will save the above graphic in your output folder.
+          printGraph(GOdata, resulFis, firstSigNodes = 10,
+                     fn.prefix = paste0(DirTerGOPlot, j, "DEG", i, "_", h),
+                     useInfo = "all", pdfSW = T)
+          # Now let's save the list of GO terms enriched in the differential genes.
+          write.table(allRes, file = paste0(DirTerGOTer,"GO_", GO, "_", j, "DEG", i, "_", h, ".txt"),
+                    sep = "\t")
+          # Section for retrieving GO tables with IDs
+          allGO <- genesInTerm(GOdata)
+          # Function to obtain the names of genes within the GO terms
+          SAM_ANOTATION <- lapply(allGO, function(x) x[x %in% genes])
+          nodos <- allRes[allRes$Significant > 0,1]
+          # Gets the gene names of the supplied GO IDs
+          GOIDtoGenes <- SAM_ANOTATION[nodos]
+          GOgenes <- as.matrix(GOIDtoGenes)
+          write.table(GOgenes,
+                      file = paste0(DirTerGOID, "ID_GO_", GO, "_", j, "DEG", i, "_", h, ".txt"),
+                      sep = "\t")
+          ####
+          # DotPlot
+          # Directory GO - DotPlot
+          DirTerGODotPlot <- paste0(DirTerGO, "DotPlot/")
+          dir.create(DirTerGODotPlot, showWarnings = FALSE)
+          # Directory GO - DotTab
+          DirTerGODotTab <- paste0(DirTerGO, "DotTab/")
+          dir.create(DirTerGODotTab, showWarnings = FALSE)
+          # Enrichment
+          dge.erch <- enricher(genes, TERM2GENE = get(paste0("GOGene_", GO)), 
+                               TERM2NAME = get(paste0("GOName_", GO)), 
+                               pAdjustMethod = "none", pvalueCutoff = 0.01, 
+                               qvalueCutoff = 1, minGSSize = 1)
+          # Save
+          write.table(dge.erch, 
+                      file=paste0(DirTerGODotTab, GO, "_", j, "DEG", i, "_", h, ".txt"), 
+                      row.names = TRUE, col.names = NA, quote = FALSE, sep = "\t")
+          ####
+          if (j == c("")){
+            list_enrchK[["All"]] <- dge.erch
+            p <- dotplot(list_enrchK[["All"]], showCategory = 15, color = "pvalue",
+                         title = paste0(GO, "Enrichment of the ", j, "DEG", i, "_", h), font.size=10)
+            svg(paste0(DirTerGODotPlot, "Dotplot_", GO, "_Enrichment_", j, "DEG", i, "_", h, ".svg"),
+                width = 15, height = 10)
+            plot(p)
+            dev.off()
+          } else {
+            list_enrchK[[j]] <- dge.erch
+            p <- dotplot(list_enrchK[[j]], showCategory = 15, color = "pvalue",
+                         title = paste0(GO, "Enrichment of the ", j, "DEG", i, "_", h), font.size=10)
+            svg(paste0(DirTerGODotPlot, "Dotplot_", GO, "_Enrichment_", j, "DEG", i, "_", h, ".svg"),
+                width = 15, height = 10)
+            plot(p)
+            dev.off()
+          }
+          ####
+        }, error=function(e){cat("ERROR :",conditionMessage(e), "\n")})
+      }
+      merge <- merge_result(list_enrchK)
+      Enrich <- dotplot(merge, showCategory = 10, color = "pvalue",
+                        title = paste0(GO, " Enrichment"), font.size=10)
+      svg(paste0(DirTerGODotPlot, "Dotplot_All_", GO, "_Enrichment.svg"), width = 10, height = 10)
+      plot(Enrich)
+      dev.off()
+      # Join
+      tab.dge.erch <- merge[,c(1,2,3,6,10)]
+      tab.dge.erch$GO <- GO
+      tab.dge.erch <- tab.dge.erch[tab.dge.erch[,"Cluster"]!="All",]
+      names(tab.dge.erch) <- sub("Cluster", "UpDown", names(tab.dge.erch))
+      tab.dge.erch[,"UpDown"] <- sub("up.", "up", tab.dge.erch[,"UpDown"])
+      tab.dge.erch[,"UpDown"] <- sub("down.", "down", tab.dge.erch[,"UpDown"])
+      table_enrchk <- rbind(table_enrchk, tab.dge.erch)
+      # Save
+      write.table(table_enrchk, 
+                  file=paste0(DirGOCont, "DEG", i, "_", h, ".txt"), 
+                  row.names = F, col.names = T, quote = FALSE, sep = "\t")
+    }, error=function(e){cat("ERROR :",conditionMessage(e), "\n")})
+    }
+  }
+}
+```
+
+# Another plots
+
+```{r}
+for (h  in condicion){
+  # h <- "FDR_0.05"
+  DirGOFDR <- paste0(DirGO, h,"/")
+  for (i in contrastes){
+    tryCatch({
+      # i <- "IPT7vsWT7"
+      DirGOCont <- paste0(DirGOFDR, i, "/")
+      table <- read.table(paste0(DirGOCont, "DEG", i, "_", h, ".txt"), 
+                          header = TRUE, sep = "\t", comment.char = "")
+      table$UpDown <- as.factor(table$UpDown)
+      table$GO <- as.factor(table$GO)
+      table <- na.omit(table)
+      # Order
+      table2 <- table[order(table$Count, decreasing = TRUE),]
+      table3 <- table2[order(table2$GO, decreasing = TRUE),]
+      table3 <- Reduce(rbind, by(table3, table3["GO"], head, n=30))
+      # Plot
+      plot <- ggplot(data = table3, aes(y = Description, x = Count, fill = UpDown)) +
+        geom_bar(position="dodge", stat="identity") +
+      theme_classic() +
+      labs(y = "Description", x = "Number of genes",
+           title = "Enrichment Gene Ontology") +
+      theme(legend.position = "right", 
+            legend.text = element_text(size=12, face="bold"),
+            legend.title = element_text(size = 12, face = "bold"),
+            axis.text = element_text(color = "black", size = 12, face = "bold"),
+            axis.title = element_text(color = "black", size = 12, face = "bold"),
+            axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1),
+            plot.title = element_text(hjust = 0.5, size = 14, face = "bold")) +
+      # facet_wrap(. ~ table3$GO, scales = "free")
+      facet_wrap(table3$GO ~ table3$UpDown, scales = "free")
+      svg(paste0(DirGOCont, "EnrichmentPlot_", h, "-", i, ".svg"), 
+          width = 20, height = 15)
+      plot(plot)
+      dev.off()
+    }, error=function(e){cat("ERROR :",conditionMessage(e), "\n")})
+  }
+}
+
+```
+
+Continued on 7 - RNA Analysis - BlastKOALA

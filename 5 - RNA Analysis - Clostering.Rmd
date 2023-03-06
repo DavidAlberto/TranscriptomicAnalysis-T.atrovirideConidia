@@ -1,0 +1,365 @@
+---
+title: "5 - RNA Analysis - Clostering"
+author: "David Alberto García Estrada"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Clostering
+
+We incorporate the table that includes the Log2FC that was generated previously
+
+```{r}
+# Change it according to interest.
+x <- "FDR_0.05"
+Outpath0 <- paste0(outpath, x, "/")
+closter <- read.table(paste0(Outpath0, "All_", x, "_logFC.txt"), 
+                    header = TRUE, sep="\t", comment.char="")
+names(closter)
+# I replace the word i with ""
+names(closter) <- sub(paste0("_", x, ".txt"), "", names(closter))
+# I replace the word "DEG" with "".
+names(closter) <- sub("DEG.", "", names(closter)) 
+# We change "X" with "GeneID".
+names(closter) <- sub("X", "GeneID", names(closter))
+names(closter)
+# For this part we remove the "up" and "down".
+closter <- closter[,-c(11:24)]
+# We make the row names the GeneID column names.
+rownames(closter) <- closter$GeneID
+# Now we remove this column since we have it in the rownames
+closter <- closter[,-1]
+class(closter) # It's data.frame
+# We convert it to matrix
+closter_mat <- as.matrix(closter)
+class(closter_mat) # It is matrix
+closter_esc <- scale(closter_mat) # We scale it up
+closter_esc[is.na(closter_esc)] = 0 # The NaN we make them 0
+fviz_nbclust(closter_esc, FUNcluster=kmeans, k.max = 10, method = "wss",
+           diss = get_dist(closter_esc, method = "euclidean")) 
+fviz_nbclust(closter_esc, FUNcluster=kmeans, k.max = 10, method = "silhouette",
+           diss = get_dist(closter_esc, method = "euclidean"))
+Tkm_clusters <- kmeans(x = Tcloster_esc, centers = 5, nstart = 50)
+fviz_cluster(object = Tkm_clusters, geom=c("point", "text"), data = Tcloster_esc, 
+             star.plot = TRUE, repel = TRUE, show.clust.cent = FALSE, 
+             palette=  c("darkred","dodgerblue4","forestgreen","goldenrod4", "black"),
+             pointsize = 4.5, ggtheme = theme_classic(), cluster.only= TRUE, 
+             labelsize = 10, main = "Clustering Results K-means")
+
+```
+
+Clostering analysis
+
+```{r}
+# We compute and generate a matrix using a "Pearson" distance method between the rows in the matrix
+cluster_cor_dist <- as.dist(1-cor(t(closter_esc), method = "pearson"))
+# We make it matrix
+cluster_cor_dist_mat <- as.matrix(cluster_cor_dist)
+# We validate the measures for the closterization results // Takes a while.
+intern <- clValid(t(cluster_cor_dist_mat[1:500,1:500]), nClust = 10:50, 
+                  clMethods = c("kmeans", "pam", "clara", "hierarchical"),
+                  validation = "internal")
+# We see the results of the validation
+summary(intern)
+plot(intern) # We see it graphically
+
+# Recall that the connectivity must be minimized, while both Dunn's index and the width of the 
+# Dunn's index and silhouette width should be maximized.
+```
+
+Hierarchical closterization analysis on a dissimilarity set and methods for analyzing it.
+
+```{r}
+methodHclust <- c("ward.D", "ward.D2", "single", "complete", "average", "mcquitty", "median", "centroid")
+comp_hclust <- data.frame(Results = c())
+for (H in methodHclust){
+  method <- hclust(d=cluster_cor_dist, method = H)
+  result <- cor(x=cluster_cor_dist, cophenetic(method))
+  print(paste("The method", H, "results in", result))
+  comp_hclust[H, "Results"] <- result
+}
+print(comp_hclust) 
+# The best is the one with the highest value, in this case "Average".
+# We plot
+hclust_datamcor_avg <- hclust(d= cluster_cor_dist, method = "average")
+plot(x = hclust_datamcor_avg, cex = 0.1, xlab = "", ylab = "", sub = "",
+     main = "Distance using Pearson, Linkage average",
+     labels = F)
+```
+
+Now we obtain the number of closter that fits our data using the "Average" method
+
+```{r}
+# The following takes a while
+# We determine the best closter number
+numb_clusters_hc_cor <- NbClust(data = cluster_cor_dist, min.nc = 10,
+                                max.nc = 50, method = "average", index = "silhouette")
+# Provides a solution to improve the workflow of clustering analysis 
+# and data visualization based on ggplot2. 
+hc_clust_cor <- eclust(x = cluster_cor_dist, FUNcluster = "hclust", k = 12, seed = 562,
+                    hc_method = "average" , nstart = 5, graph = FALSE)
+# Plots dendrograms using R base plot or ggplot2
+# Provides also an option to draw a circular dendrogram and phylogenic trees
+hcl_den_cor <- fviz_dend(hc_clust_cor, rect = TRUE, show_labels = FALSE, palette = "Paired")
+# We see the dendogram
+hcl_den_cor 
+# The more the values are from 0 to 1, the more the clustering configuration is appropriate.
+group <- dim(hc_clust_cor$silinfo$widths %>% filter(sil_width >= 0)) # 4045
+# If values from -1 to 0 are found, the clustering configuration is bad
+Nogroup <- dim(hc_clust_cor$silinfo$widths %>% filter(sil_width <= 0)) # 216, these are the ones that do not cluster well.
+# Percentage
+Nogroup[1]/group[1]*100 # 5.339926 %
+
+# Display of Silhouette information of the closterization.
+f_silh_cor <- fviz_silhouette(sil.obj = hc_clust_cor, print.summary = TRUE,
+                        ggtheme = theme_classic())
+f_silh_cor
+```
+
+Statistical validation of closterization
+
+```{r}
+clust_stat <- cluster.stats(d = cluster_cor_dist, clustering = hc_clust_cor$cluster)
+avg_Clust <- clust_stat$ave.between.matrix
+corrplot(cor(avg_Clust), is.corr = FALSE, method = "square") #correlation of dist(matrix).
+# We see a dendogram of the closters
+plot(hclust(as.dist(1-cor(avg_Clust)), method = "average"))
+
+# Let's try another way to see the data, a heatmap with dendogram
+hmcol <- colorRampPalette(brewer.pal(9, "PuBu"))(25)
+heatmap.2(cor(avg_Clust), 
+          trace="none", 
+          col = rev(hmcol), 
+          margin=c(5, 5),
+          cexRow = 0.7,
+          hclustfun = function(avg_Clust) hclust(avg_Clust, method = "average"), 
+          main = "cluster heatmap")
+# Save
+DirCloster <- paste0(Outpath0, "Closters/")
+dir.create(DirCloster, showWarnings = FALSE)
+write.table(hc_clust_cor[["silinfo"]][["widths"]], 
+            file = paste0(DirCloster, "Clusters.txt"), 
+            row.names=TRUE, col.names=NA, quote=FALSE, sep="\t")
+write.table(f_silh_cor[["plot_env"]][["sil.sum"]], 
+            file = paste0(DirCloster, "SizeClusters.txt"), 
+            row.names=TRUE, col.names=NA, quote=FALSE, sep="\t")
+```
+
+Clostering combined between hierarchical clustering and k-means method
+
+```{r}
+km_hybrid <- hkmeans(x = as.matrix(cluster_cor_dist),
+                     hc.method = "average", k = 12, iter.max = 5)
+# We see the dendogram
+# Takes a while
+hyb <- fviz_dend(km_hybrid, show_labels = FALSE, as.ggplot = TRUE, 
+                 rect = TRUE, scale= "none")
+# View plot
+hyb
+```
+
+
+
+```{r}
+annclust <- as.data.frame(hc_clust_cor$cluster)
+annclust_gpo <- data.frame(cluster = annclust$`hc_clust_cor$cluster`)
+rownames(annclust_gpo) <- rownames(closter_esc)
+
+annclust_gpo$cluster <- annclust_gpo$cluster %>% gsub(pattern = ".*^",replacement = "Cluster")
+unique(annclust_gpo$cluster)
+
+closter_df <- as.data.frame(closter_mat)
+bk <- seq(min(as.matrix(closter_mat)), max(as.matrix(closter_mat)), by = 0.1)
+
+# Colors
+colMain <- colorRampPalette(c("#67000D", "#F75A40", "#FCC7B1", "white", "#B4C3DE", "#023858"))(n=50)
+colMain <- colorRampPalette(c("#023858", "white", "#67000D"))(n=150)
+ann.cols <- list(group= c(Cluster1= "#a6cee3", Cluster2= "#1f78b4",
+                          Cluster3= "#b2df8a",Cluster4= "#33a02c",
+                          Cluster5= "#e31a1c", Cluster6="#fb9a99", 
+                          Cluster7="#ff7f00", Cluster8="#fdbf6f",
+                          Cluster9="#cab2d6", Cluster10= "#6a3d9a", 
+                          Cluster11= "#b15928", Cluster12= "#ffff99"))
+
+# Prueba
+plotmap <- pheatmap(mat = closter_mat,
+         name = "Log2FC",
+         scale = "none",
+         color = colMain,
+         border_color = NA,
+         cluster_cols = FALSE,
+         # cluster_rows = hclust_datamcor_avg,
+         show_rownames = FALSE,
+         legend_breaks = c(-6, -3, 0, 3, 6),
+         #cellwidth = 15, 
+         #width = 5,
+         #height = 15,
+         #cellheight =0.5,
+         fontsize = 10,
+         breaks = bk,
+         #fontsize_row = 0.5,
+         #cutree_rows = 55,
+         annotation_row = annclust_gpo,
+         row_title_gp = gpar(fontsize = 10),
+         angle_col = "0",
+         #row_names_gp = gpar(fontsize = 1),
+         row_title_rot = 0,
+         row_split = annclust_gpo,
+         annotation_colors = ann.cols,
+         legend = TRUE
+         )
+plotmap
+svg(paste0(DirCloster, "HeatmapClosters.svg"), 
+        width = 20, height = 20)
+plotmap
+dev.off()
+
+```
+
+We make a dendogram of how the groups are arranged
+
+```{r}
+# We compute diastances and their correlation.
+Tcloster_esc_dist <- dist(Tcloster_esc, method = "euclidean")
+Tcloster_esc_dist_avg <- hclust(d= Tcloster_esc_dist, method = "average")
+Tcloster_esc_esc_dist_comp <- hclust(d= Tcloster_esc_dist, method = "complete")
+# Correlation
+cor(x=Tcloster_esc_dist, cophenetic(Tcloster_esc_dist_avg)) #cor = 0.9675321
+cor(x=Tcloster_esc_dist, cophenetic(Tcloster_esc_esc_dist_comp)) #cor = 0.9582775
+# average is better
+Tx <- fviz_dend(x = Tcloster_esc_dist_avg, k = 4, cex = 0.5) +
+  geom_hline(yintercept = 40, linetype = "dashed") +
+  labs(title = "Herarchical clustering",
+       subtitle = "Euclidean distance, Lincage average, K=10")
+Tx
+```
+
+# Non-logarithmic difference analysis
+
+```{r}
+counts <- read.table("Counts_from_HISATSort-HTseq.txt", header = TRUE, 
+                     row.names = 1, sep = "\t", comment.char = "")
+names(counts) <- sub("Results_", "", names(counts)) 
+names(counts) <-  sub(".txt", "", names(counts)) 
+counts <- counts[,c("WT17", "WT27", "WT37",
+                 "IPT17", "IPT27", "IPT37",
+                 "WTCK17", "WTCK27", "WTCK37",
+                 "WT110", "WT210", "WT310",
+                 "IPT110", "IPT210", "IPT310",
+                 "WTCK110", "WTCK210", "WTCK310")]
+counts <- counts[rowSums(cpm(counts) >= 2) >=5,] 
+grp <-  c("WT7", "WT7", "WT7",
+        "IPT7", "IPT7", "IPT7",
+        "WTCK7", "WTCK7", "WTCK7",
+        "WT10", "WT10", "WT10",
+        "IPT10", "IPT10", "IPT10",
+        "WTCK10", "WTCK10", "WTCK10")
+###
+data_dge <- DGEList(counts = counts, group = grp)
+# We keep the genes that have enough counts to keep in a statistical analysis.
+keep <- filterByExpr(data_dge)
+dim(counts) # Originally we have 7158 genes
+table(keep) # After filtering 7045 remain
+data_dge <- data_dge[keep, ,keep.lib.sizes=FALSE] # We are left with 7045 genes only
+dgeNorm <- calcNormFactors(data_dge, method = "TMM") # Normalize libraries
+CPM.norm <- log2(cpm(dgeNorm)+1) # Compute normalized counts per million
+CPM.norm <- as.data.frame(CPM.norm)
+
+# Hacemos un promedio de cada cuentas por millón normalizadas
+avg_WT7 <- (CPM.norm$WT17 + CPM.norm$WT27 + CPM.norm$WT37)/3
+avg_WT10 <- (CPM.norm$WT110 + CPM.norm$WT210 + CPM.norm$WT310)/3
+avg_WTCK7 <- (CPM.norm$WTCK17 + CPM.norm$WTCK27 + CPM.norm$WTCK37)/3
+avg_WTCK10 <- (CPM.norm$WTCK110 + CPM.norm$WTCK210 + CPM.norm$WTCK310)/3
+avg_IPT7 <- (CPM.norm$IPT17 + CPM.norm$IPT27 + CPM.norm$IPT37)/3
+avg_IPT10 <- (CPM.norm$IPT110 + CPM.norm$IPT210 + CPM.norm$IPT310)/3
+
+# We average each normalized counts per million.
+tabCPM <- data.frame(row.names = rownames(CPM.norm))
+tabCPM[rownames(tabCPM),"WT7"] <- avg_WT7
+tabCPM[rownames(tabCPM),"WT10"] <- avg_WT10
+tabCPM[rownames(tabCPM),"WTCK7"] <- avg_WTCK7
+tabCPM[rownames(tabCPM),"WTCK10"] <- avg_WTCK10
+tabCPM[rownames(tabCPM),"IPT7"] <- avg_IPT7
+tabCPM[rownames(tabCPM),"IPT10"] <- avg_IPT10
+tabCPM <- round(tabCPM,digits = 2)
+head(tabCPM)
+
+# We store it in a table
+write.table(tabCPM, file = paste0(outpath,"TabCPM_6_condiciones.txt"), 
+            row.names=TRUE, col.names=NA, quote=FALSE, sep="\t")
+```
+
+# Image for each closter
+
+This can be done for each of the conditions, but from here on, we will work mainly with the results of FDR 0.05 and with a log2 FC greater than 1.
+
+```{r}
+# Change it according to interest.
+x <- "FDR_0.05"
+Outpath0 <- paste0(outpath, x, "/")
+# We put the closter table in a variable.
+clusk <- read.table(file = paste0(DirCloster, "Clusters.txt"), 
+                  header = TRUE, sep="\t", comment.char="")
+
+# We create directory where these graphs will be stored
+DirClosPlot <- paste0(DirCloster, "/PlotsClosters/")
+dir.create(DirClosPlot, showWarnings = FALSE)
+# Variable for each closter
+ClustFile <- list()
+for (i in 1:12){
+  tryCatch({
+    # i <- 1
+    # We keep those rows in closter i
+    temp <- clusk[clusk$cluster==i,] 
+    # We keep the ID 
+    temp_id <- temp$X 
+    # We keep the columns of the tabCPM that match the ID 
+    temp_k <- log2(tabCPM[temp_id,]) 
+    # We generate the variable Closter#, which will be used for part 3
+    # assign(paste0("Closter", i), temp_k)
+    temp_k$ID <- rownames(temp_k) # Add the ID column 
+    # rename ID to new ID
+    colnames(temp_k) <- sub("ID", "ID Nuevo", colnames(temp_k)) 
+    # Join the two tables together
+    temp_join <- left_join(temp_k, TrichoAnota, by = "ID Nuevo") 
+    # Remove all NAs values
+    temp_prod <- temp_join %>% drop_na("Annotation") 
+    # Add name to rows
+    rownames(temp_prod) <- make.names(temp_prod$Annotation, unique = T) 
+    # remove columns New ID, Old ID and Annotation
+    temp_final <- temp_prod[,-c(7,8,9)]  
+    # assign(paste0("Closter_", i), temp_final)
+    # Make a list 
+    temp_list <- list(temp_k)
+    # We save a general list that will be used in part 6.
+    ClustFile[paste0("Closter ",i)] <- temp_list 
+    # We make image
+    svg(paste0(DirClosPlot, "HeatmapCloster", i, ".svg"), 
+        width = 15, height = 10)
+    heatmap.2(as.matrix(temp_final),
+              Colv = FALSE,
+              scale= "none",
+              trace="none",
+              dendrogram = "row",
+              key.xlab = "log2CPM",
+              key.ylab = NA,
+              keysize = 1.2,
+              srtCol = 360,
+              col = hmcol,
+              adjCol = c(0.5,0.5),
+              margin=c(5,20),
+              cexRow = 0.7,
+              cexCol = 1,
+              hclustfun = function(temp_final) hclust(temp_final, method = "average"), 
+              main = paste0("Closter ", i))
+    dev.off()
+    # assign(paste0("Closter_", i, "_plot"), temp_image)
+  }, error=function(e){cat("ERROR :",conditionMessage(e),"_plot")}) 
+}
+```
+
+Continued on 6 - RNA Analysis - Enrichment

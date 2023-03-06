@@ -1,0 +1,205 @@
+---
+title: "7 - RNA Analysis - Venn Diagram"
+author: "David Alberto García Estrada"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Venn Diagram
+
+Create output folder
+
+```{r}
+DirVenn <- "VennDiagram/"
+dir.create(DirVenn, showWarnings = FALSE)
+```
+
+Haremos el análisis para todas las condiciones
+
+```{r setup, warning=FALSE}
+for (h  in condicion){
+  # h <- "FDR_0.05"
+  DirVennFDR <- paste0(DirVenn, h,"/") 
+  dir.create(DirVennFDR, showWarnings = FALSE)
+  KoalaVennFDR <- paste0(KoalaVenn, h, "/")
+  dir.create(KoalaVennFDR, showWarnings = FALSE)
+  # Each file name is stored with the pattern "FDR_0.050.txt".
+  countFiles <- list.files(path = paste0(outpath, h, "/Tablas/"),
+                           pattern = paste0("_", h, ".txt"))
+  list_Venn <- list()
+  for (count in countFiles){
+    # count <- "DEG-IPT10vsIPT7_FDR_0.05.txt"
+    name <- sub(paste0("_", h, ".txt"), "", count)
+    data <- read.table(paste0(outpath, h, "/Tablas/", count), header = TRUE, 
+                       sep="\t", quote= "", row.names=1, comment.char="")
+    list_Venn[[name]] <- data
+  }
+  for (y in contrastes){
+    # y <- "IPT7vsWT7"
+    for (i in contrastes){
+      if (i != y){
+        # i <- "IPT7vsWTCK7"
+        vennlist <- list(i = rownames(list_Venn[[paste0("DEG-", i)]]),
+                        y = rownames(list_Venn[[paste0("DEG-", y)]]))
+        if (length(vennlist[[1]])&length(vennlist[[2]]) != 0){
+          tryCatch({
+            DirVennPlot <- paste0(DirVennFDR, "Plots/") 
+            dir.create(DirVennPlot, showWarnings = FALSE)
+            DirVennList <- paste0(DirVennFDR, "Lista/") 
+            dir.create(DirVennList, showWarnings = FALSE)
+            names(vennlist) <- c(i, y)
+            # Graph
+            # ggVennDiagram(vennlist, label_alpha = 0)
+            # ggvenn(vennlist)
+            venn.diagram(x = vennlist, category.names = c(i, y), 
+                         filename = paste0(DirVennPlot, "DEG_", i, "-vs-", y, ".svg"), output = F, 
+                         # Output features
+                         imagetype = "svg", height = 100, width = 100, resolution = 300,
+                         # Circles
+                         lwd = 10, lty = "blank", fill = c("red","blue"),
+                         # Numbers
+                         cex = 20, fontface = "bold", fontfamily = "sans",
+                         # Set names
+                         cat.pos = c(315, 45), cat.dist = c(0.05, 0.05), cat.cex = 20, cat.fontface = "bold", 
+                         cat.default.pos = "text", cat.fontfamily = "sans")
+            # To obtain the elements of intersection in a table,
+            # Note: Some elements in some columns will be repeated.
+            ventemp <- venn(vennlist, show.plot = FALSE)
+            ventemp <- attributes(ventemp)$intersections
+            ventemp <- t(do.call(rbind, ventemp))
+            write.table(ventemp, file=paste0(DirVennList, "ListVenn-DEG_", i, "-vs-", y, ".txt"),
+                  row.names=F, quote=FALSE, sep="\t", col.names = T)
+            c1 <- data.frame(y = unique(ventemp[,1]))
+            names(c1) <- colnames(ventemp)[1]
+            names(c1) <- sub(":", "&", names(c1))
+            write.table(c1, file=paste0(DirVennList, "ListVenn-DEG_", i, "-vs-", y, "_", names(c1), "_UNIQUE.txt"),
+                        row.names=F, quote=FALSE, sep="\t", col.names = T)
+            k1 <- gsub("-T1", "", c1[,1])
+            write.table(k1, file=paste0(KoalaVennFDR, "ListVenn-DEG_", i, "-vs-", y, "_", names(c1), "_UNIQUE.txt"),
+                        row.names=F, quote=FALSE, sep="\t", col.names = F)
+            c2 <- data.frame(i = unique(ventemp[,2]))
+            names(c2) <- colnames(ventemp)[2]
+            names(c2) <- sub(":", "&", names(c2))
+            write.table(c2, file=paste0(DirVennList, "ListVenn-DEG_", i, "-vs-", y, "_", names(c2), "_UNIQUE.txt"),
+                      row.names=F, quote=FALSE, sep="\t", col.names = T)
+            k2 <- gsub("-T1", "", c2[,1])
+            write.table(k2, file=paste0(KoalaVennFDR, "ListVenn-DEG_", i, "-vs-", y, "_", names(c2), "_UNIQUE.txt"),
+                      row.names=F, quote=FALSE, sep="\t", col.names = F)
+            c3 <- data.frame(i = unique(ventemp[,3]))
+            names(c3) <- colnames(ventemp)[3]
+            names(c3) <- sub(":", "&", names(c3))
+            write.table(c3, file=paste0(DirVennList, "ListVenn-DEG_", i, "-vs-", y, "_", names(c3), "_UNIQUE.txt"),
+                      row.names=F, quote=FALSE, sep="\t", col.names = T)
+            k3 <- gsub("-T1", "", c3[,1])
+            write.table(k3, file=paste0(KoalaVennFDR, "ListVenn-DEG_", i, "-vs-", y, "_", names(c3), "_UNIQUE.txt"),
+                      row.names=F, quote=FALSE, sep="\t", col.names = F)
+        }, error=function(e){cat("ERROR :",conditionMessage(e), "\n")}) 
+        }
+      }
+      # Up y Down
+      for (j in c("up", "down")){
+        if (i != y){
+          # j <- "up"
+          vennlist <- list(i = rownames(list_Venn[[paste0(j, ".DEG-", i)]]),
+                           y = rownames(list_Venn[[paste0(j, ".DEG-", y)]]))
+          if (length(vennlist[[1]])&length(vennlist[[2]]) != 0){
+            tryCatch({
+              names(vennlist) <- c(paste0(j, i) , paste0(j, y))
+              # ggVennDiagram(vennlist, label_alpha = 0)
+              # ggvenn(vennlist)
+              venn.diagram(x = vennlist, category.names = c(paste0(j, i) , paste0(j, y)), 
+                           filename = paste0(DirVennPlot, j, ".DEG_", i, "-vs-", y, ".svg"), output = F,
+                           # Output features
+                           imagetype = "svg", height = 100, width = 100, resolution = 300,
+                           # Circles
+                           lwd = 10, lty = "blank", fill = c("red","blue"),
+                           # Numbers
+                           cex = 20, fontface = "bold", fontfamily = "sans",
+                           # Set names
+                           cat.pos = c(315, 45), cat.dist = c(0.05, 0.05), cat.cex = 20, cat.fontface = "bold", 
+                           cat.default.pos = "text", cat.fontfamily = "sans")
+              # To obtain the elements of intersection in a table,
+              # Note: Some elements in some columns will be repeated.
+              ventemp <- venn(vennlist, show.plot = FALSE)
+              ventemp <- (attributes(ventemp)$intersections)
+              ventemp <- t(do.call(rbind, ventemp))
+              write.table(ventemp, file=paste0(DirVennList, "ListVenn-", j, ".DEG_", i, "-vs-", y, ".txt"),
+                    row.names=F, quote=FALSE, sep="\t", col.names = T)
+              c1 <- data.frame(y = unique(ventemp[,1]))
+              names(c1) <- colnames(ventemp)[1]
+              names(c1) <- sub(":", "&", names(c1))
+              write.table(c1, file=paste0(DirVennList, "ListVenn-", j, ".DEG_", i, "-vs-", y, "_", names(c1), "_UNIQUE.txt"),
+                        row.names=F, quote=FALSE, sep="\t", col.names = T)
+              k1 <- gsub("-T1", "", c1[,1])
+              write.table(k1, file=paste0(KoalaVennFDR, "ListVenn-", j, ".DEG_", i, "-vs-", y, "_", names(c1), "_UNIQUE.txt"),
+                        row.names=F, quote=FALSE, sep="\t", col.names = F)
+              c2 <- data.frame(i = unique(ventemp[,2]))
+              names(c2) <- colnames(ventemp)[2]
+              names(c2) <- sub(":", "&", names(c2))
+              write.table(c2, file=paste0(DirVennList, "ListVenn-", j, ".DEG_", i, "-vs-", y, "_", names(c2), "_UNIQUE.txt"),
+                        row.names=F, quote=FALSE, sep="\t", col.names = T)
+              k2 <- gsub("-T1", "", c2[,1])
+              write.table(k2, file=paste0(KoalaVennFDR, "ListVenn-", j, ".DEG_", i, "-vs-", y, "_", names(c2), "_UNIQUE.txt"),
+                        row.names=F, quote=FALSE, sep="\t", col.names = F)
+              c3 <- data.frame(i = unique(ventemp[,3]))
+              names(c3) <- colnames(ventemp)[3]
+              names(c3) <- sub(":", "&", names(c3))
+              write.table(c3, file=paste0(DirVennList, "ListVenn-", j, ".DEG_", i, "-vs-", y, "_", names(c3), "_UNIQUE.txt"),
+                        row.names=F, quote=FALSE, sep="\t", col.names = T)
+              k3 <- gsub("-T1", "", c3[,1])
+              write.table(k3, file=paste0(KoalaVennFDR, "ListVenn-", j, ".DEG_", i, "-vs-", y, "_", names(c3), "_UNIQUE.txt"),
+                        row.names=F, quote=FALSE, sep="\t", col.names = F)
+            }, error=function(e){cat("ERROR :",conditionMessage(e), "\n")}) 
+          }
+        }
+      }
+    }
+  }
+}
+```
+
+For a specific contrast and for more than 2 elements
+
+```{r setup, warning=FALSE}
+# NOTE: Check in which condition you plan to make
+h <- c("FDR_0.05")
+DirVennFDR <- paste0(DirVenn, h,"/") 
+DirVennPlot <- paste0(DirVennFDR, "Plots/") 
+countFiles <- list.files(path = paste0(outpath, h, "/Tablas/"),
+                         pattern = paste0("_", h, ".txt"))
+list_Venn <- list()
+for (count in countFiles){
+  name <- sub(paste0("_", h, ".txt"), "", count)
+  # print(name)
+  data <- read.table(paste0(outpath, h, "/Tablas/", count), header = TRUE, sep="\t",
+                     quote= "", row.names=1, comment.char="")
+  list_Venn[[name]] <- data
+}
+
+x <- "WTCK10vsWTCK7"
+y <- "WT10vsWT7"
+z <- "IPT10vsIPT7"
+j <- "up"
+vennlist <- list(x = rownames(list_Venn[[paste0(j, ".DEG-", x)]]),
+                 y = rownames(list_Venn[[paste0(j, ".DEG-", y)]]),
+                 z = rownames(list_Venn[[paste0(j, ".DEG-", z)]]))
+names(vennlist) <- c(paste0(j, x) , paste0(j, y), paste0(j, z))
+ggVennDiagram(vennlist, label_alpha = 0)
+svg(paste0(DirVennPlot, j, "DEG_", x, "-vs-", y, "-vs-", z, ".svg"), width = 15, height = 10)
+ggvenn(vennlist)
+dev.off()
+
+j <- "down"
+vennlist <- list(x = rownames(list_Venn[[paste0(j, ".DEG-", x)]]),
+                 y = rownames(list_Venn[[paste0(j, ".DEG-", y)]]),
+                 z = rownames(list_Venn[[paste0(j, ".DEG-", z)]]))
+names(vennlist) <- c(paste0(j, x) , paste0(j, y), paste0(j, z))
+ggVennDiagram(vennlist, label_alpha = 0)
+svg(paste0(DirVennPlot, j, "DEG_", x, "-vs-", y, "-vs-", z, ".svg"), width = 15, height = 10)
+ggvenn(vennlist)
+dev.off()
+```

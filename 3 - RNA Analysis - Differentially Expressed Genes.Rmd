@@ -1,0 +1,392 @@
+---
+title: "3 - RNA Analysis - Differentially Expressed Genes"
+author: "David Alberto García Estrada"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Differentially Expressed Genes
+
+We create a folder where the results of the differential expression analysis will be stored
+
+```{r}
+outpath <- "DEGs/"
+dir.create(outpath, showWarnings = FALSE)
+```
+
+Declare the variable where the DGEList object is stored
+
+```{r}
+# We check the order in which the triplicates are, since this is how they will be assigned in the group
+names(counts) 
+grp <- c("WT7", "WT7", "WT7",
+        "IPT7", "IPT7", "IPT7",
+        "WTCK7", "WTCK7", "WTCK7",
+        "WT10", "WT10", "WT10",
+        "IPT10", "IPT10", "IPT10",
+        "WTCK10", "WTCK10", "WTCK10")
+```
+
+We generate the DGEList object
+
+```{r}
+# DGEList takes the table of counts and groups them by the groups we gave it earlier.
+dge <- DGEList(counts = counts, group = grp)
+# This will show us the size of the libraries and the samples
+dge$samples$lib.size
+# We see the entire dataframe
+dge$samples 
+
+# We plot the size of the libraries
+ggplot(mapping = aes(x = factor(colnames(dge), levels = unique(colnames(dge))), 
+                     y = dge$samples$lib.size)) +
+  theme_classic() +
+  theme(legend.position = "right")+
+  geom_col(fill = c(2,2,2,3,3,3,4,4,4,6,6,6,9,9,9,8,8,8)) +
+  labs(x="Reads", y="Library size", 
+       title = substitute(paste("Library"))) + 
+  theme(legend.position = "right", legend.text = element_text(size=12, face="bold"),
+        legend.key.size = unit(1, "cm"),
+        axis.text = element_text(color = "black", size = 10, face = "bold"),
+        axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),
+        axis.title = element_text(color = "black", size = 10, face = "bold"),
+        plot.title = element_text(hjust = 0.5, size=15, face="bold"))
+
+# We can visualize the dispersion of our libraries BEFORE NORMALIZING
+# using plot MDS to see if there is noise inside our replicas
+mds <- plotMDS(dge, 
+              xlim=c(-2,2), xlab = "Dim1", 
+              ylim=c(-2,2), ylab = "Dim2",
+              cex.lab= 1.5, cex =1.5, #pch = 19,
+              col=c(rep("red",3), rep("black",3),rep("blue",3)))
+```
+
+We convert to log2 basis the table of counts to plot the normalization
+
+```{r}
+logcounts <- cpm(y = dge, log = TRUE)
+nsamples <- ncol(dge)
+col <- brewer.pal(nsamples, "Paired")
+boxplot(logcounts, xlab="", ylab="Log2 counts per million", las = 2, col = col)
+```
+
+In order to perform the differential expression analysis it is necessary to normalize our data, for this EdgeR allows us to calculate a normalization factor.
+
+```{r}
+dge <- calcNormFactors(dge)
+```
+
+Grafiquemos nuevamente para observar los cambios despues de normalizar por MDS y boxplot
+```{r}
+mds <- plotMDS(dge, 
+              xlim=c(-2,2), xlab = "Dim1", 
+              ylim=c(-2,2), ylab = "Dim2",
+              cex.lab= 1.5, cex =1.5, pch = 19,
+              col=c(rep("darkred",3), rep("deepskyblue4",3), rep("forestgreen",3)))
+
+logcounts <- cpm(y = dge, log = TRUE)
+nsamples <- ncol(dge)
+boxplot(logcounts, xlab="", ylab="Log2 counts per million", las = 2, col = col)
+#Para ver más dimensiones
+#glimmaMDS(dge)
+```
+
+We can visualize the normalization values that the program gives us
+
+```{r}
+# Library size and normalization factor
+dge$samples 
+head(dge$counts) # Count table of all genes 
+dge
+```
+
+We will estimate the dispersion of the libraries in order to use the value in differential expression analysis.
+
+```{r}
+dge <- estimateCommonDisp(dge)
+dge$common.dispersion
+```
+
+To do a multifactor analysis, one must first calculate the common dispersion which is the one above, then one has to calculate the GLMTagwise dispersion for multifactor experiments
+
+````{r, results="hide"}
+dge <- estimateGLMTagwiseDisp(dge)
+head(dge$tagwise.dispersion)
+```
+
+We plot the dispersion of the total libraries, after the GMLTagwise analysis.
+
+```{r}
+plotBCV(dge)
+abline(h=0.3, col="red") 
+# The lower the dispersion value the better since we expect them to be not 
+# too sparse, i.e., the more clustered the better.
+```
+
+To calculate the differential expression of multivariate data, a list of objects must be made.
+The "DGElist" object must contain the following
+- read counts
+- library sizes
+- normalization factor
+- dispersion estimates
+
+Matrix design
+
+```{r}
+dge$samples
+levels(dge$samples$group)
+```
+
+To compare multiple groups using the "GLM approach", a matrix must be designed to describe the conditions of the treatments.
+
+```{r}
+design <- model.matrix(~ 0 + group, data = dge$samples) 
+# The 0 is an instruction to put a column for each group.
+design
+colnames(design) <- levels(dge$samples$group)
+design
+```
+
+Once you have the matrix, you can make comparisons by designing a vector of contrasts. 
+**IMPORTANT**: Get the comparisons right.
+
+```{r}
+fit <- glmQLFit(dge, design)
+# Subtraction is always "Treatment - Control".
+my.contrasts = makeContrasts(WTCK7vsWT7 = WTCK7 - WT7,
+                             IPT7vsWT7 = IPT7 - WT7,
+                             IPT7vsWTCK7 = IPT7 - WTCK7,
+                             WTCK10vsWT10 = WTCK10 - WT10,
+                             IPT10vsWT10 = IPT10 - WT10,
+                             IPT10vsWTCK10 = IPT10 - WTCK10,
+                             WT10vsWT7 = WT10 - WT7,
+                             IPT10vsIPT7 = IPT10 - IPT7,
+                             WTCK10vsWTCK7 = WTCK10 - WTCK7,
+                             levels=design)
+```
+
+Cycle *for* to make each of the contrasts
+
+```{r}
+# We declare the variables for each contrast
+contrasts <- c("WTCK7vsWT7", "IPT7vsWT7", "IPT7vsWTCK7",
+               "WTCK10vsWT10", "IPT10vsWT10", "IPT10vsWTCK10",
+               "WT10vsWT7", "IPT10vsIPT7", "WTCK10vsWTCK7")
+
+# In the for loop we will enter different values of FDRs
+FDRs <- c(0.050, 0.010, 0.005)
+
+# Cycle for
+for (i in contrasts){
+  tryCatch({
+    # Comparison
+    # i <- "IPT7vsWT7"
+    j <- glmQLFTest(fit, contrast = my.contrasts[,i]) # qlf.
+    topTags(j)
+    k <- topTags(j, n=Inf)$table # deTab.
+    # DEG
+    for (x in FDRs){
+      tryCatch({
+        # x <- "0.05"
+        Outpath0 <- paste0(outpath, "FDR_", x, "/")
+        dir.create(Outpath0, showWarnings = FALSE)
+        Outpath0.T <- paste0(Outpath0, "Tablas/")
+        dir.create(Outpath0.T, showWarnings = FALSE)
+        Outpath0.P <- paste0(Outpath0, "Plots/")
+        dir.create(Outpath0.P, showWarnings = FALSE)
+        y <- rownames(k)[k$FDR < x] # deGenes.
+        length(y)
+        # Store the DEGs
+        z <- paste0("DEG-", i,"_FDR_", x) # DEGs
+        write.table(k[y,], file = paste0(Outpath0.T, z, ".txt"), 
+                    row.names = TRUE, col.names=NA, quote=FALSE, sep="\t")
+        # Graph what the DEG genes look like.
+        svg(paste0(Outpath0.P, z, "_Smear.svg"), width = 15, height = 15)
+        plotSmear(dge, de.tags = y, cex = 0.5)
+        dev.off()
+        plotV <- EnhancedVolcano(k[k$FDR < x,], lab = y, x = "logFC", y = "PValue")
+        svg(paste0(Outpath0.P, z, "_Volcano.svg"), width = 15, height = 15)
+        plot(plotV)
+        dev.off()
+        # Separate up and down genes
+        updown <- read.table(paste0(Outpath0.T, z, ".txt"), header=TRUE, 
+                        row.names = 1, sep="\t", comment.char="")
+        write.table(updown[updown$logFC < 0,], 
+                    file = paste0(Outpath0.T, "down.", z, ".txt"), 
+                    row.names=TRUE, col.names=NA, quote=FALSE, sep="\t")
+        write.table(updown[updown$logFC > 0,], 
+                    file = paste0(Outpath0.T, "up.", z, ".txt"), 
+                    row.names=TRUE, col.names=NA, quote=FALSE, sep="\t")
+        ####
+        # Similarly but additionally applying a logFC > 1
+        Outpath1 <- paste0(outpath, "FDR_", x, "_logFC/")
+        dir.create(Outpath1, showWarnings = FALSE)
+        Outpath1.T <- paste0(Outpath1, "Tablas/")
+        dir.create(Outpath1.T, showWarnings = FALSE)
+        Outpath1.P <- paste0(Outpath1, "Plots/")
+        dir.create(Outpath1.P, showWarnings = FALSE)
+        y2 <- rownames(k)[k$FDR < x & abs(k$logFC) > 1] # deGenes
+        length(y2)
+        # Store the DEGs
+        z2 <- paste0("DEG-", i, "_FDR_", x, "_logFC") # DEGs
+        write.table(k[y2,], file = paste0(Outpath1.T, z2, ".txt"), 
+                    row.names = TRUE, col.names=NA, quote=FALSE, sep="\t")
+        # Graph of what the DEG genes look like.
+        svg(paste0(Outpath1.P, z2, "_Smear.svg"), width = 15, height = 15)
+        plotSmear(dge, de.tags = y2, cex = 0.5)
+        dev.off()
+        plotV2 <- EnhancedVolcano(k[k$FDR < x & abs(k$logFC) > 1,], 
+                        lab = y2, x = "logFC", y = "PValue")
+        svg(paste0(Outpath1.P, z2, "_Volcano.svg"), width = 15, height = 15)
+        plot(plotV2)
+        dev.off()
+                # Separate up and down genes
+        updown2 <- read.table(paste0(Outpath1.T, z2, ".txt"), 
+                         header=TRUE, row.names = 1, sep="\t", comment.char="")
+        write.table(updown2[updown2$logFC < 0,], 
+                    file = paste0(Outpath1.T, "down.", z2, ".txt"), 
+                    row.names=TRUE, col.names=NA, quote=FALSE, sep="\t")
+        write.table(updown2[updown2$logFC > 0,], 
+                    file = paste0(Outpath1.T, "up.", z2, ".txt"), 
+                    row.names=TRUE, col.names=NA, quote=FALSE, sep="\t")
+      }, error=function(e){cat("ERROR :",conditionMessage(e), "\n")})
+    }
+  }, error=function(e){cat("ERROR :",conditionMessage(e), "\n")})
+}
+```
+
+# Differentially Expressed Gene Matrix
+
+To generate a DEG matrix with all of them use the following code
+
+```{r}
+list <- list()
+id <- c()
+for (x in FDRs){
+  # x <- "0.05"
+  # FDRs only
+  Outpath0 <- paste0(outpath, "FDR_", x, "/")
+  Outpath0.T <- paste0(Outpath0, "Tablas/")
+  # Each of the filenames with the FDR_ pattern is stored
+  countFiles <- list.files(path = Outpath0.T, 
+                           pattern = paste0("FDR_", x, ".txt"))
+  for (count in countFiles) {
+    treat <- sub("", "", count)
+    print(treat)
+    tab <- read.table(file = paste0(Outpath0.T, count), 
+                     header = TRUE, sep="\t", quote= "", 
+                     row.names=1, comment.char="")
+    list[[treat]] <- tab
+    id <- unique(c(id, rownames(tab)))
+  }
+  # FDR and logFC major 1
+  Outpath1 <- paste0(outpath, "FDR_", x, "_logFC/")
+  Outpath1.T <- paste0(Outpath1, "Tablas/")
+  # Each of the file names with the pattern FDR_logFCmayor1 is stored.
+  countFiles <- list.files(path = Outpath1.T, 
+                           pattern = paste0("FDR_", x, "_logFC.txt"))
+  for (File in countFiles) {
+    treat <- sub("", "", File)
+    print(treat)
+    tab <- read.table(file = paste0(Outpath1.T, File), 
+                     header = TRUE, sep="\t", quote= "", 
+                     row.names=1, comment.char="")
+    list[[treat]] <- tab
+    id <- unique(c(id, rownames(tab)))
+  }
+  # "table" includes as row names each of the IDs, in this case the genes.
+  table <- data.frame(row.names = id)
+  for (treat in names(list)) {
+    temptable <- list[[treat]]
+    table[rownames(temptable), treat] <- temptable[, 1]
+    print(paste("The sample", treat, "was successfully added"))
+  }
+  # FOR TABLE WITH CPMs
+  tableCPM <- data.frame(row.names = id)
+  for (treat in names(list)) {
+    temptable <- list[[treat]]
+    tableCPM[rownames(temptable), treat] <- temptable[, 2]
+    print(paste("The sample", treat, "was successfully added"))
+  }
+}
+# there will be IDs in some treats that have no counts and appear as NAs. 
+# so it is necessary to convert these to zeros (0)
+table[is.na(table)] = 0
+dim(table)
+tableCPM[is.na(tableCPM)] = 0
+dim(tableCPM)
+
+# We save the table in a text file
+write.table(table, file = paste0(outpath, "All_DEGs_logFC.txt"), 
+            row.names=TRUE, col.names=NA, quote=FALSE, sep="\t")
+write.table(tableCPM, file = paste0(outpath, "All_DEGs_CPM.txt"), 
+            row.names=TRUE, col.names=NA, quote=FALSE, sep="\t")
+```  
+
+To generate an DEG matrix for each condition, use the following code
+
+```{r}
+condicion <- c("FDR_0.05", "FDR_0.05_logFC",
+               "FDR_0.005", "FDR_0.005_logFC",
+               "FDR_0.01", "FDR_0.01_logFC")
+for (x in condicion){
+  # x <- "FDR_0.05"
+  # FDRs only
+  Outpath0 <- paste0(outpath, x, "/")
+  Outpath0.T <- paste0(Outpath0, "Tablas/")
+  countFiles <- list.files(path = Outpath0.T, 
+                           pattern = paste0(x, ".txt"))
+  # Create vectors for the for loop
+  list <- list()
+  id <- c()
+  for (countFile in countFiles){
+    # countFile <- "DEG-IPT10vsIPT7_FDR_0.05.txt" 
+    treat <- sub("", "", countFile)
+    print(treat)
+    tab <- read.table(file = paste0(Outpath0.T, "/", countFile), 
+                    header = TRUE, sep="\t", quote= "", row.names=1, comment.char="")
+    list[[treat]] <- tab
+    id <- unique(c(id, rownames(tab)))
+  }
+  # FOR TABLE WITH FDRs
+  # "table" includes as row names each of the IDs, in this case genes.
+  table <- data.frame(row.names = id)
+  # table dims that tells us how many IDs/genes we have
+  dim(table)
+  # Each of the "treat" stored in the "list", is stored in the vector 
+  # "temptabla" which is added to the vector "tabla" at the end of the last column of the "tabla".
+  # of the "table", finally the legend that the sample was added is printed.
+  for (treat in names(list)) {
+    temptabla <- list[[treat]]
+    # IMPORTANT - Here we keep the column logFC 
+    table[rownames(temptabla), treat] <- temptabla[, 1] 
+    print(paste("The sample", treat, "was successfully added"))
+  }
+  # there will be IDs in some treats that have no counts and appear as NAs. 
+  # so it is necessary to convert these to zeros (0)
+  table[is.na(table)] = 0
+  # Save the table
+  write.table(table, file = paste0(Outpath0, "All_", x, "_logFC.txt"), 
+              row.names=TRUE, col.names=NA, quote=FALSE, sep="\t")
+  # FOR TABLE WITH CPMs
+  table <- data.frame(row.names= id)
+  dim(table)
+  for (treat in names(list)) {
+    temptable <- list[[treat]]
+    # IMPORTANT - Here we stay with logCPM
+    table[rownames(temptabla), treat] <- temptabla[, 2] 
+    print(paste("The sample", treat, "was successfully added"))
+  }
+  # there will be IDs in some treats that have no counts and appear as NAs. 
+  # so it is necessary to convert these to zeros (0)
+  table[is.na(table)] = 0
+  write.table(table, file=paste0(Outpath0, "All_", x, "_logCPM.txt"), 
+            row.names=TRUE, col.names=NA, quote=FALSE, sep="\t")
+}
+```
+
+Continued on 4 - RNA Analysis - IDs & Annotation

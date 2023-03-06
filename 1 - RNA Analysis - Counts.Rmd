@@ -1,0 +1,185 @@
+---
+title: "1 - RNA Analysis - Counts"
+author: "David Alberto García Estrada"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+The following code allows a transcriptomic analysis to be made from RNA sequencing data that was previously cleaned and mapped to a reference genome.
+
+# Packages
+
+First it is necessary to install the packages that we will use throughout the code.
+NOTE: Uncomment the following lines to install the packages, then comment them out again.
+
+```{r}
+#if (!require("BiocManager", quietly = TRUE))
+#    install.packages("BiocManager")
+#BiocManager::install("limma")
+#BiocManager::install("edgeR")
+#BiocManager::install("Glimma")
+#BiocManager::install("ggplot2")
+#BiocManager::install("ggdendro")
+#BiocManager::install("reshape2")
+#BiocManager::install("multiClust")
+#BiocManager::install("topGO")
+#BiocManager::install("Rgraphviz")
+#BiocManager::install("KEGGREST")
+#BiocManager::install("clusterProfiler")
+#BiocManager::install("enrichplot")
+#BiocManager::install("ComplexHeatmap")
+#BiocManager::install("EnhancedVolcano")
+#install.packages("dendextend")
+#install.packages("data.table")
+#install.packages("ggfortify")
+#install.packages("ggpmisc")
+#install.packages("rafalib")
+#install.packages("reshape2")
+#install.packages("stats")
+#install.packages("pheatmap")
+#install.packages("grid")
+#install.packages("gplots")
+#install.packages("factoextra")
+#install.packages("VennDiagram")
+#install.packages("pvclust")
+#install.packages("tidyr")
+#install.packages("cols4all")
+#install.packages("ggnewscale")
+#install.packages("devtools")
+#library("devtools")
+#remotes::install_github("mtennekes/cols4all")
+#install_github("jokergoo/ComplexHeatmap")
+```
+
+We load these packages
+
+```{r, error=FALSE, warning=FALSE, message=FALSE}
+library("devtools")
+library("data.table")
+library("ggplot2")
+library("ggfortify")
+library("ggpmisc")
+library("rafalib")
+library("limma")
+library("edgeR")
+library("Glimma")
+library("stats")
+library("RColorBrewer")
+library("ggdendro")
+library("reshape2")
+library("grid")
+library("gridtext")
+library("gplots")
+library("factoextra")
+library("multiClust")
+library("dendextend")
+library("topGO")
+library("Rgraphviz")
+library("VennDiagram")
+library("cluster")
+library("ggpubr")
+library("NbClust")
+library("dplyr")
+library("clValid")
+library("fpc")
+library("corrplot")
+library("pvclust")
+library("viridis")
+library("clusterProfiler")
+library("enrichplot")
+library("ggVennDiagram")
+library("ggvenn")
+library("ComplexHeatmap")
+library("tidyr")
+library("cols4all") 
+library("ggnewscale")
+library("KEGGREST")
+library("tibble")
+library("EnhancedVolcano")
+```
+
+# Counts matrix
+
+The counts matrix is generated from the counts results obtained with **HTseq** and the mapping performed with **HISAT2**, in *Sort* mode.
+
+**Important**.
+We set the working address
+
+```{r}
+# Display current directory
+getwd()
+# If necessary, change the path where the stored files are located. 
+workingDir <- "."
+setwd(workingDir)
+```
+
+Specify the address where the counts tables are located.
+
+```{r}
+Rawdata <- "CountsTable/"
+```
+
+Generate a single counts table
+We create a variable - list containing all files with the common word "Results_"
+
+```{r}
+# Each of the file names with the pattern "Results_" is stored.
+countFiles <- list.files(path = Rawdata, pattern = "Results_")
+# Create vectors for the for loop
+list <- list()
+id <- c()
+# Each of the file NAMES in the "countFiles" vector is stored in the 
+# vector "treat" and is printed in the variable tab the table of each file is read.
+# "countFile" and stored there in the vector "treat" is stored in the # vector "list".
+# and in turn the values of the table read and stored in "tab" are added.
+# Finally in the vector id the names of the unique IDs that are in tab are stored
+for (countFile in countFiles) {
+  # countFile <- "Results_IPT17.txt"
+  treat <- sub("", "", countFile)
+  tab <- read.table(paste0(Rawdata, countFile), 
+                    header = FALSE, sep = "\t", quote = "", 
+                    row.names = 1, comment.char = "")
+  list[[treat]] <- tab
+  id <- unique(c(id, rownames(tab)))
+}
+```
+
+The above is stored in a list that we have to pass to a table data.frame
+
+```{r}
+# The "table" includes as row names each of the IDs, in this case the genes.
+table <- data.frame(row.names = id) 
+#Dimensions of the table that tells us how many IDs/genes we have.
+dim(table) # We have a total of 12024 genes.
+# Each of the "treat" stored in "list", is stored in the vector 
+# which is added to the vector "table" at the end of the last column of the "table".
+# Finally, the legend that the sample was added is printed.
+for (treat in names(list)) {
+  temptable <- list[[treat]]
+  table[rownames(temptable), treat] <- temptable[, 1]
+  print(paste("The sample", treat, "was successfully added"))
+}
+# there will be IDs in some treats that have no counts and appear as NAs.
+# so it is necessary to convert these to zeros (0)
+table[is.na(table)] = 0
+```
+
+Here are some details of the full table of accounts
+
+```{r}
+# We remove the last rows that summarize data
+table <- table[-c(12020:12024),]
+```
+
+We save the table in a text file that we call *Counts_from_HISATSort-HTseq.txt*.
+
+```{r}
+write.table(table, file = paste0("Counts_from_HISATSort-HTseq.txt"), 
+            row.names = TRUE, col.names = NA, quote = FALSE, sep = "\t")
+```
+
+Continued on 2 - RNA Analysis - Grouping and Standardization

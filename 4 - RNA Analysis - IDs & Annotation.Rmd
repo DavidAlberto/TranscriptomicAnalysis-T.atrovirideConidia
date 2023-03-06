@@ -1,0 +1,72 @@
+---
+title: "4 - RNA Analysis - IDs & Annotation"
+author: "David Alberto García Estrada"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Matching of old IDs to new IDs and Annotation
+
+```{r}
+# We generate a data.frame of the genes of the new genome, there are 12013.
+Tatro <- (1:12013)
+Tatro <- sprintf("Tatro_%06d-T1", Tatro)
+ListTatro <- data.frame("ID Nuevo" = Tatro)
+colnames(ListTatro) <- sub("ID.Nuevo", "ID Nuevo", colnames(ListTatro))
+head(ListTatro, 5)
+dim(ListTatro)
+
+# Import the correspondence table of old IDs vs. new IDs
+DirEnrich <- "GO/"
+Referencia <- read.table(paste0(DirEnrich, "IDs.viejos-IDs.nuevos.txt"), 
+                        header = T, sep = "\t", quote = "", 
+                        row.names = NULL, stringsAsFactors = F)
+
+# We change the title of the columns
+colnames(Referencia) <- sub("ID", "ID Viejo", colnames(Referencia))
+colnames(Referencia) <- sub("newAnn", "ID Nuevo", colnames(Referencia))
+head(Referencia, 5)
+dim(Referencia) # 9400 x 2, there is only 9400 matching of old IDs with new IDs
+
+# We join the complete gene list with the matching ones.
+Referencia <- left_join(ListTatro, Referencia, by = "ID Nuevo")
+head(Referencia, 5)
+dim(Referencia) # 12013 x 2
+# NOTE: There are some NA's that appear in the old ID column.
+# this is because there is none that corresponds to the new ID
+
+# Annotation of Trichoderma atroviride old version
+AnotaTricho <- read.table(paste0(DirEnrich, "AnotacionTrichoderma.txt"), 
+                          header = T, sep = "\t",quote = "", row.names = NULL,
+                          stringsAsFactors = F)
+
+# We change the title of the columns
+colnames(AnotaTricho) <- sub("ID", "ID Viejo", colnames(AnotaTricho))
+head(AnotaTricho, 5)
+dim(AnotaTricho) # 11863 x 2, means that only 11863 genes are annotated 
+# in the old genome, some are mis-annotated
+
+# We merge the tables to have the annotation with the ID New.
+AnotaNueva <- left_join(Referencia, AnotaTricho, by = "ID Viejo")
+head(AnotaNueva, 5)
+dim(AnotaNueva) # 12013 x 3, means that only 11863 genes are annotated
+# We remove all rows that have NAs in the New ID column.
+TrichoAnota <- AnotaNueva %>% drop_na("ID Viejo") 
+dim(TrichoAnota) # We go from 12013 to 9273
+
+# We remove the "hypothetical protein".
+TrichoAnota <- TrichoAnota[TrichoAnota$Annotation!="hypothetical protein",]
+TrichoAnota <- TrichoAnota[TrichoAnota$Annotation!="hypothetical protein ",]
+TrichoAnota <- TrichoAnota[TrichoAnota$Annotation!="hypothetical conserved protein",]
+dim(TrichoAnota) # We go from 9273 to 7728.
+# I.e., there are 7728 genes that have annotation other than "Hypothetical protein".
+# Save the table 
+write.table(TrichoAnota, file = paste0(DirEnrich, "TrichoAnota.txt"),
+            row.names=TRUE, col.names=NA, quote=FALSE, sep="\t")
+```
+
+Continued on 5 - RNA Analysis - Clostering

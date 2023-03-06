@@ -1,0 +1,94 @@
+---
+title: "7 - RNA Analysis - BlastKOALA"
+author: "David Alberto García Estrada"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# BlastKOALA
+
+Create output folder
+
+```{r}
+KOALA <- "BlastKOALA/"
+dir.create(KOALA, showWarnings = FALSE)
+```
+
+List IDs 
+
+## Contrast
+
+A list with the IDs of each one of the conditions will be obtained in order to make a grep in linux command line
+
+Create output folder
+
+```{r}
+KoalaCondition <- paste0(KOALA, "Condition/")
+dir.create(KoalaCondition, showWarnings = FALSE)
+```
+
+```{r setup, warning=FALSE}
+for (c in condicion){
+  # c <- "FDR_0.05"
+  KoalaFDR <- paste0(KoalaCondition, c, "/")
+  dir.create(KoalaFDR, showWarnings = FALSE)
+  for (k in contrastes){
+    # k <- "IPT7vsWT7"
+    KoalaCont <- paste0(KoalaFDR, k, "/")
+    dir.create(KoalaCont, showWarnings = FALSE)
+    for (ud in UpDown){
+      # ud <- "up."
+      TablaDEG <- read.table(paste0(outpath, c, "/Tablas/", ud, "DEG-", k, "_", c, ".txt"),
+                             header = TRUE, sep="\t", comment.char="")
+      colnames(TablaDEG) <- gsub("X", "GeneID", colnames(TablaDEG))
+      colnames(TablaDEG) <- gsub(paste0("_", c, ".txt"), "", colnames(TablaDEG))
+      TablaDEG$GeneID <- gsub("-T1", "", TablaDEG$GeneID) # without -T1
+      TatroID <- TablaDEG$GeneID
+      write.table(TatroID, 
+                  file = paste0(KoalaCont, "ListIDs_",  ud, "DEG-", k, "_", c, ".txt"),
+                  row.names=F, quote=FALSE, sep="\t", col.names = F)
+    }
+  }
+}
+```
+
+## Cluster
+
+A list with the IDs of each one of the cluster will be obtained in order to make a grep in linux command line
+
+Create output folder
+
+```{r}
+KoalaClus <- paste0(KOALA, "Cluster/")
+dir.create(KoalaClus, showWarnings = FALSE)
+```
+
+```{r setup, warning=FALSE}
+# Unique condition is "FDR_0.05"
+for (i in names(ClustFile)){
+  # i <- "Closter 1"
+  TablaIDs <- rownames(ClustFile[[i]])
+  TablaIDs <- gsub("NA", NA, TablaIDs)
+  TablaIDs <- TablaIDs[!is.na(TablaIDs)]
+  TablaIDs <- gsub("-T1", "", TablaIDs) # without -T1
+  write.table(TablaIDs, file = paste0(KoalaClus, "ListIDs_",  i, ".txt"),
+              row.names=F, quote=FALSE, sep="\t", col.names = F)
+}
+```
+
+## Venn
+
+A list with the IDs of each one of the VennDiagram will be obtained in order to make a grep in linux command line
+
+The lists are generated in the following code (8 - RNA Analysis - Venn Diagram), but it is necessary to have the output folder ready
+
+```{r}
+KoalaVenn <- paste0(KOALA, "Venn/")
+dir.create(KoalaVenn, showWarnings = FALSE)
+```
+
+Continued on 8 - RNA Analysis - Venn Diagram
