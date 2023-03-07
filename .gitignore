@@ -1,3 +1,4 @@
+.gitignore
 .Rproj.user
 .Rhistory
 .RData
@@ -9,3 +10,4 @@ GO/
 VennDiagram/
 RNAanalysis.RData
 Counts_from_HISATSort-HTseq.txt
+TranscriptomicAnalysis-T.atrovirideConidia.Rproj
